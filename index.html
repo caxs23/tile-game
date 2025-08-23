@@ -1,0 +1,518 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Color Tiles</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(to bottom, #a8edea, #fed6e3);
+      font-family: 'Arial', sans-serif;
+      touch-action: manipulation;
+    }
+    #game-container {
+      text-align: center;
+      max-width: 100%;
+      padding: 1rem;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto;
+      border-radius: 1rem;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+    }
+    .power-up-btn {
+      margin: 0.5rem;
+      padding: 1rem 2rem; /* Increased padding for touch */
+      border-radius: 9999px;
+      font-weight: bold;
+      font-size: 1.2rem; /* Larger text for mobile */
+    }
+    #tutorial-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+    #tutorial-content {
+      background: white;
+      padding: 2rem;
+      border-radius: 1rem;
+      text-align: center;
+      max-width: 90%; /* Mobile friendly */
+    }
+  </style>
+</head>
+<body>
+  <div id="tutorial-modal">
+    <div id="tutorial-content">
+      <h2 class="text-2xl font-bold mb-4">How to Play Color Tiles</h2>
+      <p>Click or touch empty spaces to remove nearest matching color tiles from up, down, left, right.</p>
+      <p>Earn points and clear levels!</p>
+      <button id="close-tutorial" class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg">Got It!</button>
+    </div>
+  </div>
+  <div id="game-container" class="flex flex-col items-center space-y-4">
+    <h1 class="text-4xl font-bold text-gray-800 drop-shadow-md">Color Tiles</h1>
+    <div id="score" class="text-2xl text-gray-700">Score: 0</div>
+    <div id="time" class="text-2xl text-gray-700">Time: 60</div>
+    <div id="coins" class="text-xl text-yellow-600">Coins: 0</div>
+    <div id="level" class="text-xl text-blue-600">Level: 1</div>
+    <div class="flex flex-wrap justify-center space-x-4">
+      <button id="hint-btn" class="power-up-btn bg-blue-500 text-white hover:bg-blue-600">Hint (5 coins)</button>
+      <button id="shuffle-btn" class="power-up-btn bg-green-500 text-white hover:bg-green-600">Shuffle (10 coins)</button>
+    </div>
+    <button id="start-button" class="px-8 py-4 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition duration-200 text-xl">Start Game</button>
+    <button id="reset-button" class="px-8 py-4 bg-red-600 text-white rounded-lg shadow-md hover:bg-red-700 transition duration-200 text-xl hidden">Reset Game</button>
+    <button id="rate-us" class="px-8 py-4 bg-green-600 text-white rounded-lg shadow-md hover:bg-green-700 transition duration-200 text-xl hidden">Rate Us!</button>
+  </div>
+<script>
+let grid = [];
+let colors = [
+  [255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255],
+  [0, 255, 255], [128, 0, 0], [0, 128, 0], [0, 0, 128], [128, 128, 0]
+];
+let score = 0;
+let coins = 0;
+let timeLeft = 60;
+let penaltyFreeClicks = 5;
+let gameOver = false;
+let gameStarted = false;
+let currentLevel = 1;
+let gridSize = 10;
+let tileSize;
+let engine, world, fallingTiles = [];
+let particles = [];
+let removeSound = new Audio('https://freesound.org/data/previews/612/612095_5674468-lq.mp3');
+let highScore = localStorage.getItem('highScore') || 0;
+let levels = {
+  1: { size: 8, time: 90, empty: 10 },
+  2: { size: 10, time: 60, empty: 20 },
+  3: { size: 12, time: 45, empty: 30 }
+};
+
+function setup() {
+  tileSize = Math.min(window.innerWidth * 0.09, window.innerHeight * 0.09); // Increased for mobile touch
+  let canvasSize = Math.max(...Object.values(levels).map(l => l.size)) * tileSize;
+  let canvas = createCanvas(canvasSize, canvasSize * 1.5);
+  canvas.parent('game-container');
+  canvas.style('display', gameStarted ? 'block' : 'none');
+  canvas.touchStarted(touchStarted); // Enhanced touch
+  canvas.touchMoved(touchMoved);
+  canvas.touchEnded(touchEnded);
+  engine = Matter.Engine.create();
+  world = engine.world;
+  world.gravity.y = 1.5;
+  initializeGrid();
+  document.getElementById('start-button').addEventListener('click', startGame, { passive: true });
+  document.getElementById('reset-button').addEventListener('click', resetGame, { passive: true });
+  document.getElementById('hint-btn').addEventListener('click', showHint, { passive: true });
+  document.getElementById('shuffle-btn').addEventListener('click', shuffleGrid, { passive: true });
+  document.getElementById('rate-us').addEventListener('click', () => alert('Thanks for rating! +10 coins'), { passive: true });
+  document.getElementById('close-tutorial').addEventListener('click', closeTutorial, { passive: true });
+}
+
+function windowResized() {
+  tileSize = Math.min(window.innerWidth * 0.09, window.innerHeight * 0.09);
+  let canvasSize = gridSize * tileSize;
+  resizeCanvas(canvasSize, canvasSize * 1.5);
+}
+
+function initializeGrid() {
+  let levelConfig = levels[currentLevel];
+  gridSize = levelConfig.size;
+  let tileColors = [];
+  for (let i = 0; i < colors.length; i++) {
+    for (let j = 0; j < (gridSize * gridSize / colors.length); j++) {
+      tileColors.push(i);
+    }
+  }
+  tileColors = shuffle(tileColors);
+  grid = [];
+  for (let i = 0; i < gridSize; i++) {
+    grid[i] = [];
+    for (let j = 0; j < gridSize; j++) {
+      grid[i][j] = tileColors[i * gridSize + j];
+    }
+  }
+  for (let i = 0; i < levelConfig.empty; i++) {
+    let row = Math.floor(Math.random() * gridSize);
+    let col = Math.floor(Math.random() * gridSize);
+    if (grid[row][col] !== -1) {
+      grid[row][col] = -1;
+    } else {
+      i--;
+    }
+  }
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    let j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function startGame() {
+  showTutorial();
+  gameStarted = true;
+  document.getElementById('start-button').style.display = 'none';
+  document.getElementById('reset-button').classList.remove('hidden');
+  document.querySelector('canvas').style.display = 'block';
+  timeLeft = levels[currentLevel].time;
+  document.getElementById('time').innerText = `Time: ${timeLeft}`;
+  setInterval(updateTime, 1000);
+}
+
+function resetGame() {
+  score = 0;
+  coins = 0;
+  penaltyFreeClicks = 5;
+  gameOver = false;
+  gameStarted = true;
+  currentLevel = 1;
+  document.getElementById('score').innerText = `Score: ${score}`;
+  document.getElementById('coins').innerText = `Coins: ${coins}`;
+  document.getElementById('level').innerText = `Level: ${currentLevel}`;
+  document.getElementById('time').innerText = `Time: ${levels[currentLevel].time}`;
+  initializeGrid();
+  fallingTiles = [];
+  particles = [];
+  Matter.World.clear(world, false);
+  Matter.Engine.clear(engine);
+  engine = Matter.Engine.create();
+  world = engine.world;
+  world.gravity.y = 1.5;
+}
+
+function showTutorial() {
+  document.getElementById('tutorial-modal').style.display = 'flex';
+  setTimeout(() => {
+    document.getElementById('close-tutorial').style.opacity = 1;
+  }, 2000);
+}
+
+function closeTutorial() {
+  document.getElementById('tutorial-modal').style.display = 'none';
+}
+
+function draw() {
+  background(255); // Full clear to fix afterimage bug
+  Matter.Engine.update(engine, 1000 / 60);
+  for (let i = 0; i < gridSize; i++) {
+    for (let j = 0; j < gridSize; j++) {
+      if (grid[i][j] !== -1) {
+        let c1 = color(colors[grid[i][j]]);
+        let c2 = lerpColor(c1, color(255), 0.4);
+        let gradient = drawingContext.createLinearGradient(
+          j * tileSize, i * tileSize, j * tileSize + tileSize, i * tileSize + tileSize
+        );
+        gradient.addColorStop(0, c1);
+        gradient.addColorStop(1, c2);
+        drawingContext.fillStyle = gradient;
+        drawingContext.shadowBlur = 10;
+        drawingContext.shadowColor = 'rgba(0,0,0,0.2)';
+        noStroke();
+        rect(j * tileSize, i * tileSize, tileSize, tileSize, 10);
+      }
+    }
+  }
+  for (let i = fallingTiles.length - 1; i >= 0; i--) {
+    let tile = fallingTiles[i];
+    let c1 = color(colors[tile.color]);
+    let c2 = lerpColor(c1, color(255), 0.4);
+    let gradient = drawingContext.createLinearGradient(
+      tile.body.position.x, tile.body.position.y, 
+      tile.body.position.x + tileSize, tile.body.position.y + tileSize
+    );
+    gradient.addColorStop(0, c1);
+    gradient.addColorStop(1, c2);
+    drawingContext.fillStyle = gradient;
+    noStroke();
+    rect(tile.body.position.x - tileSize/2, tile.body.position.y - tileSize/2, tileSize, tileSize, 10);
+    if (tile.body.position.y > height) {
+      Matter.World.remove(world, tile.body);
+      fallingTiles.splice(i, 1);
+    }
+  }
+  // Particles (limit to 100 for performance)
+  if (particles.length > 100) particles.splice(0, particles.length - 100);
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    fill(p.color);
+    noStroke();
+    ellipse(p.x, p.y, p.size);
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.1;
+    p.size -= 0.2;
+    if (p.size <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function mousePressed() {
+  if (!gameStarted || gameOver) return;
+  let col = Math.floor(mouseX / tileSize);
+  let row = Math.floor(mouseY / tileSize);
+  if (row >= 0 && row < gridSize && col >= 0 && col < gridSize && grid[row][col] === -1) {
+    handleClick(row, col);
+  }
+}
+
+function touchStarted() {
+  if (!gameStarted || gameOver) return false;
+  let col = Math.floor(touches[0].x / tileSize);
+  let row = Math.floor(touches[0].y / tileSize);
+  if (row >= 0 && row < gridSize && col >= 0 && col < gridSize && grid[row][col] === -1) {
+    handleClick(row, col);
+  }
+  return false; // Prevent default touch behavior
+}
+
+function touchMoved() {
+  return false; // Prevent scrolling on touch
+}
+
+function touchEnded() {
+  return false;
+}
+
+function handleClick(row, col) {
+  let nearestTiles = findNearestTiles(row, col);
+  let colorsToRemove = findMatchingColors(nearestTiles);
+  if (colorsToRemove.length > 0) {
+    createParticles(colorsToRemove);
+    removeTiles(colorsToRemove);
+    removeSound.play();
+    score += colorsToRemove.length;
+    coins += Math.floor(colorsToRemove.length / 2);
+    document.getElementById('score').innerText = `Score: ${score}`;
+    document.getElementById('coins').innerText = `Coins: ${coins}`;
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem('highScore', highScore);
+    }
+    checkLevelComplete();
+  } else {
+    if (penaltyFreeClicks > 0) {
+      penaltyFreeClicks--;
+    } else {
+      timeLeft = Math.max(0, timeLeft - 3);
+      document.getElementById('time').innerText = `Time: ${timeLeft}`;
+    }
+  }
+}
+
+function findNearestTiles(row, col) {
+  let tiles = [];
+  for (let i = row - 1; i >= 0; i--) {
+    if (grid[i][col] !== -1) {
+      tiles.push({ row: i, col: col, color: grid[i][col] });
+      break;
+    }
+  }
+  for (let i = row + 1; i < gridSize; i++) {
+    if (grid[i][col] !== -1) {
+      tiles.push({ row: i, col: col, color: grid[i][col] });
+      break;
+    }
+  }
+  for (let j = col - 1; j >= 0; j--) {
+    if (grid[row][j] !== -1) {
+      tiles.push({ row: row, col: j, color: grid[row][j] });
+      break;
+    }
+  }
+  for (let j = col + 1; j < gridSize; j++) {
+    if (grid[row][j] !== -1) {
+      tiles.push({ row: row, col: j, color: grid[row][j] });
+      break;
+    }
+  }
+  return tiles;
+}
+
+function findMatchingColors(tiles) {
+  let colorCount = {};
+  for (let tile of tiles) {
+    colorCount[tile.color] = (colorCount[tile.color] || 0) + 1;
+  }
+  let toRemove = [];
+  for (let color in colorCount) {
+    if (colorCount[color] >= 2) {
+      for (let tile of tiles) {
+        if (tile.color == color) {
+          toRemove.push({ row: tile.row, col: tile.col, color: tile.color });
+        }
+      }
+    }
+  }
+  return toRemove;
+}
+
+function removeTiles(tiles) {
+  for (let tile of tiles) {
+    grid[tile.row][tile.col] = -1;
+    let body = Matter.Bodies.rectangle(
+      tile.col * tileSize + tileSize / 2,
+      tile.row * tileSize + tileSize / 2,
+      tileSize,
+      tileSize,
+      { friction: 0.1, restitution: 0.5 }
+    );
+    Matter.Body.setAngularVelocity(body, Math.random() * 0.1 - 0.05);
+    fallingTiles.push({ body: body, color: tile.color });
+    Matter.World.add(world, body);
+  }
+}
+
+function createParticles(tiles) {
+  for (let tile of tiles) {
+    for (let i = 0; i < 10; i++) {
+      particles.push({
+        x: tile.col * tileSize + tileSize / 2,
+        y: tile.row * tileSize + tileSize / 2,
+        vx: Math.random() * 4 - 2,
+        vy: Math.random() * 4 - 4,
+        size: Math.random() * 5 + 5,
+        color: colors[tile.color]
+      });
+    }
+  }
+}
+
+function updateTime() {
+  if (!gameStarted || gameOver) return;
+  timeLeft--;
+  document.getElementById('time').innerText = `Time: ${timeLeft}`;
+  if (timeLeft <= 0) {
+    gameOver = true;
+    alert(`Game Over! Final Score: ${score} | High Score: ${highScore}`);
+    document.getElementById('rate-us').classList.remove('hidden');
+  }
+}
+
+function checkLevelComplete() {
+  let remainingTiles = 0;
+  for (let i = 0; i < gridSize; i++) {
+    for (let j = 0; j < gridSize; j++) {
+      if (grid[i][j] !== -1) remainingTiles++;
+    }
+  }
+  if (remainingTiles === 0) {
+    coins += 20;
+    document.getElementById('coins').innerText = `Coins: ${coins}`;
+    currentLevel++;
+    if (currentLevel > 3) {
+      alert('All Levels Cleared! You Win!');
+      gameOver = true;
+    } else {
+      alert(`Level ${currentLevel - 1} Cleared! Proceeding to Level ${currentLevel}`);
+      initializeGrid();
+      timeLeft = levels[currentLevel].time;
+      document.getElementById('time').innerText = `Time: ${timeLeft}`;
+      document.getElementById('level').innerText = `Level: ${currentLevel}`;
+    }
+    document.getElementById('rate-us').classList.remove('hidden');
+  }
+}
+
+function showHint() {
+  if (coins < 5) return alert('Not enough coins!');
+  coins -= 5;
+  document.getElementById('coins').innerText = `Coins: ${coins}`;
+  for (let i = 0; i < gridSize; i++) {
+    for (let j = 0; j < gridSize; j++) {
+      if (grid[i][j] === -1) {
+        let nearest = findNearestTiles(i, j);
+        if (findMatchingColors(nearest).length > 0) {
+          particles.push({
+            x: j * tileSize + tileSize / 2,
+            y: i * tileSize + tileSize / 2,
+            vx: 0,
+            vy: 0,
+            size: tileSize,
+            color: [255, 255, 0, 150]
+          });
+          return;
+        }
+      }
+    }
+  }
+}
+
+function shuffleGrid() {
+  if (coins < 10) return alert('Not enough coins!');
+  coins -= 10;
+  document.getElementById('coins').innerText = `Coins: ${coins}`;
+  let flatGrid = grid.flat().filter(c => c !== -1);
+  flatGrid = shuffle(flatGrid);
+  let idx = 0;
+  for (let i = 0; i < gridSize; i++) {
+    for (let j = 0; j < gridSize; j++) {
+      if (grid[i][j] !== -1) {
+        grid[i][j] = flatGrid[idx++];
+      }
+    }
+  }
+}
+</script>
+</body>
+</html>
