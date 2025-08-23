@@ -120,6 +120,7 @@ function setup() {
   world.gravity.y = 1.5;
   initializeGrid();
   document.getElementById('start-button').addEventListener('click', startGame, { passive: true });
+  document.getElementById('start-button').addEventListener('touchend', startGame, { passive: true }); // Added touchend event
   document.getElementById('reset-button').addEventListener('click', resetGame, { passive: true });
   document.getElementById('hint-btn').addEventListener('click', showHint, { passive: true });
   document.getElementById('shuffle-btn').addEventListener('click', shuffleGrid, { passive: true });
