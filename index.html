@@ -13,29 +13,71 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       min-height: 100vh;
       background: linear-gradient(to bottom, #a8edea, #fed6e3);
       font-family: 'Arial', sans-serif;
       touch-action: manipulation;
+      padding: 0.5rem; /* 상단 여백 축소 */
     }
     #game-container {
       text-align: center;
       max-width: 100%;
-      padding: 1rem;
+      padding: 0.5rem; /* 패딩 축소 */
+      width: 100%;
+      box-sizing: border-box;
     }
     canvas {
       display: block;
       margin: 0 auto;
-      border-radius: 1rem;
-      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+      border-radius: 0.5rem; /* 모바일에서 둥근 모서리 축소 */
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* 그림자 축소 */
+      max-width: 100%;
+      max-height: 60vh; /* 캔버스 높이를 뷰포트 높이의 60%로 제한 */
+    }
+    h1 {
+      font-size: 1.5rem; /* 모바일에서 제목 크기 축소 */
+      line-height: 1.2;
+      margin-bottom: 0.5rem;
+      color: #2d3748;
+    }
+    #score, #time, #coins, #level {
+      font-size: 1rem; /* 텍스트 크기 축소 */
+      margin: 0.25rem 0;
+      color: #2d3748;
     }
     .power-up-btn {
-      margin: 0.5rem;
-      padding: 1rem 2rem; /* Increased padding for touch */
+      margin: 0.25rem;
+      padding: 0.5rem 1rem; /* 버튼 패딩 축소 */
       border-radius: 9999px;
-      font-weight: bold;
-      font-size: 1.2rem; /* Larger text for mobile */
+      font-weight: 600;
+      font-size: 0.875rem; /* 버튼 텍스트 크기 축소 */
+      line-height: 1.25rem;
+    }
+    #start-button, #reset-button, #rate-us {
+      padding: 0.5rem 1.5rem; /* 버튼 패딩 축소 */
+      font-size: 1rem; /* 버튼 텍스트 크기 축소 */
+      border-radius: 0.5rem;
+    }
+    /* 모바일 전용 스타일 */
+    @media (max-width: 640px) {
+      h1 {
+        font-size: 1.25rem;
+      }
+      #score, #time, #coins, #level {
+        font-size: 0.875rem;
+      }
+      .power-up-btn {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.75rem;
+      }
+      #start-button, #reset-button, #rate-us {
+        padding: 0.4rem 1rem;
+        font-size: 0.875rem;
+      }
+      canvas {
+        max-height: 70vh; /* 모바일에서 캔버스 높이 증가 */
+      }
     }
   </style>
 </head>
@@ -80,18 +122,22 @@ let levels = {
 };
 
 function setup() {
-  tileSize = Math.min(window.innerWidth * 0.09, window.innerHeight * 0.09); // Increased for mobile touch
-  let canvasSize = Math.max(...Object.values(levels).map(l => l.size)) * tileSize;
-  let canvas = createCanvas(canvasSize, canvasSize * 1.5);
+  const containerWidth = window.innerWidth * 0.95; // 화면 너비의 95% 사용
+  const containerHeight = window.innerHeight * 0.7; // 화면 높이의 70% 사용
+  tileSize = Math.floor(Math.min(containerWidth, containerHeight) / gridSize);
+  let canvasSize = gridSize * tileSize;
+  let canvas = createCanvas(canvasSize, canvasSize);
   canvas.parent('game-container');
   canvas.style('display', gameStarted ? 'block' : 'none');
-  canvas.touchStarted(touchStarted); // Enhanced touch
+  canvas.touchStarted(touchStarted);
   canvas.touchMoved(touchMoved);
   canvas.touchEnded(touchEnded);
+  
   engine = Matter.Engine.create();
   world = engine.world;
   world.gravity.y = 1.5;
   initializeGrid();
+  
   document.getElementById('start-button').addEventListener('click', startGame, { passive: true });
   document.getElementById('start-button').addEventListener('touchend', startGame, { passive: true });
   document.getElementById('reset-button').addEventListener('click', resetGame, { passive: true });
@@ -105,9 +151,11 @@ function setup() {
 }
 
 function windowResized() {
-  tileSize = Math.min(window.innerWidth * 0.09, window.innerHeight * 0.09);
+  const containerWidth = window.innerWidth * 0.95; // 화면 너비의 95% 사용
+  const containerHeight = window.innerHeight * 0.7; // 화면 높이의 70% 사용
+  tileSize = Math.floor(Math.min(containerWidth, containerHeight) / gridSize);
   let canvasSize = gridSize * tileSize;
-  resizeCanvas(canvasSize, canvasSize * 1.5);
+  resizeCanvas(canvasSize, canvasSize);
 }
 
 function initializeGrid() {
@@ -136,9 +184,8 @@ function initializeGrid() {
       i--;
     }
   }
-  // Ensure solvable after init
   while (!hasPossibleMoves()) {
-    initializeGrid(); // Re-init if no moves
+    initializeGrid();
   }
 }
 
@@ -182,7 +229,7 @@ function resetGame() {
 }
 
 function draw() {
-  background(255); // Full clear to fix afterimage bug
+  background(255);
   Matter.Engine.update(engine, 1000 / 60);
   for (let i = 0; i < gridSize; i++) {
     for (let j = 0; j < gridSize; j++) {
@@ -207,20 +254,19 @@ function draw() {
     let c1 = color(colors[tile.color]);
     let c2 = lerpColor(c1, color(255), 0.4);
     let gradient = drawingContext.createLinearGradient(
-      tile.body.position.x, tile.body.position.y, 
+      tile.body.position.x, tile.body.position.y,
       tile.body.position.x + tileSize, tile.body.position.y + tileSize
     );
     gradient.addColorStop(0, c1);
     gradient.addColorStop(1, c2);
     drawingContext.fillStyle = gradient;
     noStroke();
-    rect(tile.body.position.x - tileSize/2, tile.body.position.y - tileSize/2, tileSize, tileSize, 10);
+    rect(tile.body.position.x - tileSize / 2, tile.body.position.y - tileSize / 2, tileSize, tileSize, 10);
     if (tile.body.position.y > height) {
       Matter.World.remove(world, tile.body);
       fallingTiles.splice(i, 1);
     }
   }
-  // Particles (limit to 100 for performance)
   if (particles.length > 100) particles.splice(0, particles.length - 100);
   for (let i = particles.length - 1; i >= 0; i--) {
     let p = particles[i];
@@ -257,11 +303,11 @@ function touchStarted() {
       handleClick(row, col);
     }
   }
-  return false; // Prevent default touch behavior
+  return false;
 }
 
 function touchMoved() {
-  return false; // Prevent scrolling on touch
+  return false;
 }
 
 function touchEnded() {
