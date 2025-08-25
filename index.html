@@ -118,14 +118,14 @@ let particles = [];
 let removeSound = new Audio('https://freesound.org/data/previews/612/612095_5674468-lq.mp3');
 let highScore = localStorage.getItem('highScore') || 0;
 let levels = {
-  1: { size: 15, time: 150, empty: 50 },
-  2: { size: 15, time: 150, empty: 50 },
-  3: { size: 15, time: 150, empty: 50 }
+  1: { size: 12, time: 150, empty: 30 },
+  2: { size: 12, time: 150, empty: 30 },
+  3: { size: 12, time: 150, empty: 30 }
 };
 
 function setup() {
   // gridSize를 15로 설정합니다.
-  gridSize = 15;
+  gridSize = 12;
   
   // 화면 비율에 맞게 캔버스 크기를 계산합니다.
   const containerWidth = window.innerWidth * 0.95; 
