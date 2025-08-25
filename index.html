@@ -118,17 +118,26 @@ let particles = [];
 let removeSound = new Audio('https://freesound.org/data/previews/612/612095_5674468-lq.mp3');
 let highScore = localStorage.getItem('highScore') || 0;
 let levels = {
-  1: { size: 10, time: 90, empty: 15 },
-  2: { size: 10, time: 90, empty: 15 },
-  3: { size: 10, time: 90, empty: 15 }
+  1: { size: 15, time: 150, empty: 50 },
+  2: { size: 15, time: 150, empty: 50 },
+  3: { size: 15, time: 150, empty: 50 }
 };
 
 function setup() {
-  const containerWidth = window.innerWidth * 0.95; // 화면 너비의 95% 사용
-  const containerHeight = window.innerHeight * 0.7; // 화면 높이의 70% 사용
+  // gridSize를 15로 설정합니다.
+  gridSize = 15;
+  
+  // 화면 비율에 맞게 캔버스 크기를 계산합니다.
+  const containerWidth = window.innerWidth * 0.95; 
+  const containerHeight = window.innerHeight * 0.7;
   tileSize = Math.floor(Math.min(containerWidth, containerHeight) / gridSize);
-  let canvasSize = gridSize * tileSize;
-  let canvas = createCanvas(canvasSize, canvasSize);
+  
+  // 캔버스의 최대 너비와 높이를 제한하여 화면을 벗어나지 않도록 합니다.
+  const maxCanvasWidth = Math.min(containerWidth, gridSize * tileSize);
+  const maxCanvasHeight = Math.min(containerHeight, gridSize * tileSize);
+  
+  let canvas = createCanvas(maxCanvasWidth, maxCanvasHeight);
+  canvas.parent('game-container');
   canvas.parent('game-container');
   canvas.style('display', gameStarted ? 'block' : 'none');
   canvas.touchStarted(touchStarted);
